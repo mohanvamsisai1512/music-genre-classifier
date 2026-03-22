@@ -1,14 +1,13 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-import librosa
 import numpy as np
+import librosa
 import joblib
 import shutil
-import os
 
 app = FastAPI()
 
-# Allow frontend to access API
+# CORS (VERY IMPORTANT)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,45 +16,63 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load trained model
+# =========================
+# LOAD MODEL FILES
+# =========================
+
 model = joblib.load("model.joblib")
 scaler = joblib.load("scaler.joblib")
-label_encoder = joblib.load("label.joblib")
+encoder = joblib.load("label.joblib")
+mfcc_columns = joblib.load("columns.joblib")
 
+# =========================
+# FEATURE EXTRACTION
+# =========================
 
-def extract_features(file_path):
+def extract_mfcc(file_path):
     y, sr = librosa.load(file_path, duration=30)
+
     mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=20)
 
-    features = np.concatenate([
-        np.mean(mfcc, axis=1),
-        np.std(mfcc, axis=1)
-    ])
+    features = []
 
-    return features.reshape(1,-1)
+    for i in range(20):
+        features.append(np.mean(mfcc[i]))
+        features.append(np.var(mfcc[i]))
 
+    return np.array(features).reshape(1, -1)
+
+# =========================
+# PREDICT API
+# =========================
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
 
-    file_location = file.filename
+    file_location = f"temp_{file.filename}"
 
     with open(file_location, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    features = extract_features(file_location)
+    features = extract_mfcc(file_location)
 
-    features = scaler.transform(features)
+    # convert to correct format
+    import pandas as pd
+    features_df = pd.DataFrame(features, columns=mfcc_columns)
 
-    prediction = model.predict(features)[0]
-    confidence = np.max(model.predict_proba(features))
+    # scale
+    features_scaled = scaler.transform(features_df)
 
-    genre = label_encoder.inverse_transform([prediction])[0]
+    # predict
+    prediction = model.predict(features_scaled)
+    predicted_genre = encoder.inverse_transform(prediction)[0]
 
-    os.remove(file_location)
+    # confidence
+    probs = model.predict_proba(features_scaled)
+    confidence = np.max(probs)
 
     return {
         "filename": file.filename,
-        "predicted_genre": genre,
+        "predicted_genre": predicted_genre,
         "confidence": float(confidence)
     }

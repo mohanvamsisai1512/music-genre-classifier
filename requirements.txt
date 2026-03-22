@@ -1,8 +1,10 @@
 fastapi
 uvicorn
 numpy
+pandas
 librosa
 scikit-learn
 joblib
 python-multipart
 soundfile
+scipy

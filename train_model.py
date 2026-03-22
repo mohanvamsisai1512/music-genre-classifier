@@ -1,116 +1,76 @@
-import librosa
+import pandas as pd
 import numpy as np
-import os
 import joblib
 
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.metrics import accuracy_score
+from sklearn.neural_network import MLPClassifier
 
-DATASET_PATH = "dataset"
+# =========================
+# LOAD DATASET (CSV)
+# =========================
 
-X = []
-y = []
+df = pd.read_csv("features_30_sec.csv")   # place this file in your project
 
-def extract_features(file_path):
+# =========================
+# SELECT MFCC FEATURES
+# =========================
 
-    y_audio, sr = librosa.load(file_path, duration=30)
+mfcc_columns = [col for col in df.columns if 'mfcc' in col]
 
-    # MFCC features
-    mfcc = librosa.feature.mfcc(y=y_audio, sr=sr, n_mfcc=20)
-    mfcc_mean = np.mean(mfcc, axis=1)
+X = df[mfcc_columns]
+y = df['label']
 
-    # Chroma features
-    chroma = librosa.feature.chroma_stft(y=y_audio, sr=sr)
-    chroma_mean = np.mean(chroma, axis=1)
+# Encode labels
+encoder = LabelEncoder()
+y = encoder.fit_transform(y)
 
-    # Spectral contrast
-    spec_contrast = librosa.feature.spectral_contrast(y=y_audio, sr=sr)
-    spec_contrast_mean = np.mean(spec_contrast, axis=1)
-
-    # Zero Crossing Rate
-    zcr = librosa.feature.zero_crossing_rate(y_audio)
-    zcr_mean = np.mean(zcr)
-
-    # Combine all features
-    features = np.concatenate([
-        mfcc_mean,
-        chroma_mean,
-        spec_contrast_mean,
-        [zcr_mean]
-    ])
-
-    return features
-
-
-print("Extracting features...")
-
-for genre in os.listdir(DATASET_PATH):
-
-    if genre.startswith("."):
-        continue
-
-    genre_folder = os.path.join(DATASET_PATH, genre)
-
-    for file in os.listdir(genre_folder):
-
-        if not file.endswith(".wav"):
-            continue
-
-        file_path = os.path.join(genre_folder, file)
-
-        try:
-
-            features = extract_features(file_path)
-
-            X.append(features)
-            y.append(genre)
-
-        except Exception as e:
-            print("Error processing:", file_path)
-
-
-X = np.array(X)
-
-print("Encoding labels...")
-
-label_encoder = LabelEncoder()
-y = label_encoder.fit_transform(y)
-
-print("Scaling features...")
-
-scaler = StandardScaler()
-X = scaler.fit_transform(X)
-
-print("Splitting dataset...")
+# =========================
+# TRAIN TEST SPLIT
+# =========================
 
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42
 )
 
-print("Training model...")
+# =========================
+# SCALING
+# =========================
 
-model = RandomForestClassifier(
-    n_estimators=400,
-    max_depth=20,
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)
+
+# =========================
+# TRAIN MODEL (MLP)
+# =========================
+
+model = MLPClassifier(
+    hidden_layer_sizes=(128, 64),
+    max_iter=500,
     random_state=42
 )
 
 model.fit(X_train, y_train)
 
-print("Evaluating model...")
+# =========================
+# EVALUATE
+# =========================
 
-predictions = model.predict(X_test)
+y_pred = model.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
 
-accuracy = accuracy_score(y_test, predictions)
+print("✅ Model trained")
+print("Accuracy:", round(accuracy * 100, 2), "%")
 
-print("Model Accuracy:", accuracy)
-
-print("Saving model...")
+# =========================
+# SAVE FILES
+# =========================
 
 joblib.dump(model, "model.joblib")
 joblib.dump(scaler, "scaler.joblib")
-joblib.dump(label_encoder, "label.joblib")
+joblib.dump(encoder, "label.joblib")
+joblib.dump(mfcc_columns, "columns.joblib")
 
-print("Model trained and saved successfully!")
+print("✅ Model saved")
