@@ -23,7 +23,7 @@ app.add_middleware(
 model = joblib.load("model.joblib")
 scaler = joblib.load("scaler.joblib")
 encoder = joblib.load("label.joblib")
-mfcc_columns = joblib.load("columns.joblib")
+mfcc_columns = [f"mfcc{i+1}_{stat}" for i in range(20) for stat in ["mean", "var"]]
 
 # =========================
 # FEATURE EXTRACTION
